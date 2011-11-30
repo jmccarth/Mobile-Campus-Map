@@ -1,0 +1,352 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+    <head>
+        <meta name="viewport" content="width=device-width, height=device-height, minimum-scale=1, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="format-detection" content="telephone=yes">
+        <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+        <title>Campus Map</title>
+        <!-- MOBILE STYLESHEET -->
+        <link href='http://serverapi.arcgisonline.com/jsapi/arcgis/2.5/js/dojo/dojox/mobile/themes/iPhone/iPhone.css' rel='stylesheet'>
+        <link href="http://serverapi.arcgisonline.com/jsapi/arcgis/2.5/js/dojo/dojox/mobile/themes/buttons.css" rel="stylesheet">
+        <!-- Random CSS I don't know the purpose of -->
+        <style type="text/css">
+            html, body {
+                height: 100%;
+                margin: 0px;
+                padding: 0px;
+                width: 100%;
+            }
+        </style>
+        <!-- Random JS I don't know the purpose of -->
+        <script type="text/javascript">
+            var djConfig = {
+                parseOnLoad: true
+            };
+        </script>
+        <!-- Script/API Imports: Esri JS API -->
+        <script type="text/javascript" src="lib/jquery/jquery-1.5.2.min.js">
+        </script>
+        <script type="text/javascript" src="http://serverapi.arcgisonline.com/jsapi/arcgis/?v=2.5compact">
+        </script>
+        <script type="text/javascript" src="app/buildings.js">
+        </script>
+        <script type="text/javascript" src="app/locator.js">
+        </script>
+        <script type="text/javascript" src="app/routing.js">
+        </script>
+        <script type="text/javascript" src="app/fooddrink.js">
+        </script>
+        <script type="text/javascript" src="app/parking.js">
+        </script>
+		<script type="text/javascript" src="app/courses.js">
+        </script>
+		<script type="text/javascript" src="app/rooms.js">
+        </script>
+		<script type="text/javascript" src="app/compstatus.js">
+        </script>
+		<script type="text/javascript" src="app/people.js">
+        </script>
+        <!-- Beginning of JS Code -->
+        <script language="JavaScript" type="text/javascript">
+            djConfig = dojo.config;
+            
+            //Dojo imports
+            dojo.require("dojox.mobile.parser");
+            dojo.require("dojox.mobile");
+            dojo.requireIf(!dojo.isWebKit, "dojox.mobile.compat");
+            
+            
+            //Esri imports
+            dojo.require("esri.tasks.query");
+            dojo.require("esri.tasks.locator");
+            dojo.require("esri.tasks.geometry");
+            dojo.require("esri.tasks.route");
+			dojo.require("esri.layers.FeatureLayer");
+            
+            //GLOBAL VARS
+            var service = "http://env-gisdev1.uwaterloo.ca/arcgis/rest/services/campus-map/uw/MapServer";
+            var bldgURL = "http://env-gisdev1.uwaterloo.ca/arcgis/rest/services/campus-map/uw/MapServer/5";
+            var foodURL = "http://env-gisdev1.uwaterloo.ca/arcgis/rest/services/campus-map/uw/MapServer/0";
+            var parkingURL = "http://env-gisdev1.uwaterloo.ca/arcgis/rest/services/campus-map/uw/MapServer/7";
+            var parkingPointURL = "http://env-gisdev1.uwaterloo.ca/arcgis/rest/services/campus-map/uw/MapServer/6";
+			var coursesURL = "http://env-gisdev1.uwaterloo.ca/arcgis/rest/services/campus-map/uw/MapServer/16";
+			var facURL = "http://env-gisdev1.uwaterloo.ca/arcgis/rest/services/campus-map/uw/MapServer/15";
+			var deptURL = "http://env-gisdev1.uwaterloo.ca/arcgis/rest/services/campus-map/uw/MapServer/14";
+			var intSpacesURL = "http://env-gisdev1.uwaterloo.ca/arcgis/rest/services/campus-map/uw/MapServer/4";
+			var floorURL = "http://env-gisdev1.uwaterloo.ca/arcgis/rest/services/campus-map/uw/MapServer/2";
+			var peopleURL = "http://env-gisdev1.uwaterloo.ca/arcgis/rest/services/campus-map/uw/MapServer/17";
+			var compStatusXMLPath = "../status.xml";
+			
+            var map;
+			var baseMap, roomsLayer;
+            var buildingSelectionLayer, fdSelectionLayer, routeLayer, roomSelectionLayer, peopleSelectionLayer;
+            var locatorPID = -1; //Holds the process of ID of the locator thread. -1 means locator is off.
+            var interval = 5000; //Interval, in ms, at which locator will be updated
+            var prj_graphic; // Holds a graphic of the current location
+            var destination; //Holds a point representing the most recent selection
+            var currentPosition; //Holds a point representing the current location of the device (if locator is enabled)
+            var routeTask, routeParams;
+			var accRouteTask, accRouteParams;
+            var stopSymbol, routeSymbol, lastStop;
+            
+            
+            //INIT
+            function init(){
+            
+                //Create map object.  Set nav to true to enable pan buttons.
+                map = new esri.Map("map", {
+                    nav: false,
+                    slider: true,
+                    displayGraphicsOnPan: true
+                });
+                baseMap = new esri.layers.ArcGISTiledMapServiceLayer(service);
+                map.addLayer(baseMap, 1);
+				
+				roomsLayer = new esri.layers.FeatureLayer(intSpacesURL,{mode: esri.layers.FeatureLayer.MODE_ONDEMAND,outFields: ["*"]});
+				roomsLayer.setDefinitionExpression("SPACEID LIKE '%$_1%' ESCAPE '$'");
+				map.addLayer(roomsLayer);
+				
+                
+                //Add graphics layer to hold building selections
+                buildingSelectionLayer = new esri.layers.GraphicsLayer();
+                var bldgSelectSymbol = new esri.symbol.SimpleFillSymbol(esri.symbol.SimpleFillSymbol.STYLE_SOLID, new esri.symbol.SimpleLineSymbol(esri.symbol.SimpleLineSymbol.STYLE_SOLID, new dojo.Color([255, 0, 0]), 2), new dojo.Color([255, 255, 255, 0]));
+                var bldgRenderer = new esri.renderer.SimpleRenderer(bldgSelectSymbol);
+                buildingSelectionLayer.setRenderer(bldgRenderer);
+                map.addLayer(buildingSelectionLayer);
+                
+                //Add graphics layer to hold food/drink location selections
+                fdSelectionLayer = new esri.layers.GraphicsLayer();
+                var fdSelectSymbol = new esri.symbol.SimpleMarkerSymbol(esri.symbol.SimpleMarkerSymbol.STYLE_CIRCLE, 16, new esri.symbol.SimpleLineSymbol(esri.symbol.SimpleLineSymbol.STYLE_SOLID, new dojo.Color([0, 0, 0]), 1), new dojo.Color([255, 102, 51]));
+                var fdRenderer = new esri.renderer.SimpleRenderer(fdSelectSymbol);
+                fdSelectionLayer.setRenderer(fdRenderer);
+                map.addLayer(fdSelectionLayer);
+                
+                //Add graphics layer to hold route
+                routeLayer = new esri.layers.GraphicsLayer();
+                var routeSymbol = new esri.symbol.SimpleLineSymbol().setColor(new dojo.Color([0, 0, 255, 0.5])).setWidth(5);
+                var routeRenderer = new esri.renderer.SimpleRenderer(routeSymbol);
+                routeLayer.setRenderer(routeRenderer);
+                map.addLayer(routeLayer);
+                
+                //Add graphics layer to hold parking features
+                parkingPointSelectionLayer = new esri.layers.GraphicsLayer();
+                var parkingPointSelectSymbol = new esri.symbol.SimpleMarkerSymbol(esri.symbol.SimpleMarkerSymbol.STYLE_X, 20, new esri.symbol.SimpleLineSymbol(esri.symbol.SimpleLineSymbol.STYLE_SOLID, new dojo.Color([255, 0, 0]), 2), new dojo.Color([255, 255, 0, 0.5]));
+                var parkingPointRenderer = new esri.renderer.SimpleRenderer(parkingPointSelectSymbol);
+                parkingPointSelectionLayer.setRenderer(parkingPointRenderer);
+                map.addLayer(parkingPointSelectionLayer);
+                
+                //Add room selection layer
+				roomSelectionLayer = new esri.layers.GraphicsLayer();
+				var roomSelectSymbol = new esri.symbol.SimpleFillSymbol(esri.symbol.SimpleFillSymbol.STYLE_SOLID, new esri.symbol.SimpleLineSymbol(esri.symbol.SimpleLineSymbol.STYLE_SOLID, new dojo.Color([255, 0, 0]), 2), new dojo.Color([255, 255, 255, 0]));
+				var roomRenderer = new esri.renderer.SimpleRenderer(roomSelectSymbol);
+				roomSelectionLayer.setRenderer(roomRenderer);
+				map.addLayer(roomSelectionLayer);
+				
+				
+				
+                //Create routing task
+                routeTask = new esri.tasks.RouteTask("http://env-gisdev1.uwaterloo.ca/arcgis/rest/services/campus-map/uw_route/NAServer/Route");
+                routeParams = new esri.tasks.RouteParameters();
+                routeParams.stops = new esri.tasks.FeatureSet();
+                routeParams.outSpatialReference = new esri.SpatialReference({
+                    wkid: 102100
+                });
+                dojo.connect(routeTask, "onSolveComplete", showRoute);
+                dojo.connect(routeTask, "onError", routeErrorHandler);
+                
+                //Define symbol for a stop
+                stopSymbol = new esri.symbol.SimpleMarkerSymbol().setStyle(esri.symbol.SimpleMarkerSymbol.STYLE_CROSS).setSize(15);
+                stopSymbol.outline.setWidth(4);
+                
+                //Connect list building functions to UI elements
+                dojo.connect(dijit.byId("buildingView"), 'onAfterTransitionIn', createBuildingList);
+                dojo.connect(dijit.byId("foodView"), 'onAfterTransitionIn', createFoodDrinkList);
+				dojo.connect(dijit.byId("searchView"),'onAfterTransitionIn',createFacultyList);
+				dojo.connect(dijit.byId("roomView"),'onAfterTransitionIn',initializeRoomView);
+				dojo.connect(dijit.byId("labsView"),'onAfterTransitionIn',buildCompLabList);
+				dojo.connect(dijit.byId("peopleView"),'onAfterTransitionIn',createPeopleList);
+                
+                //connect parking type list items to functions which will populate the parking list
+                dojo.connect(dijit.byId("visitorParking"), 'onClick', function(){
+                    showLotsByType("Visitor")
+                });
+                dojo.connect(dijit.byId("permitParking"), 'onClick', function(){
+                    showLotsByType("Permit")
+                });
+                dojo.connect(dijit.byId("accessibleParking"), 'onClick', function(){
+                    showLotsByType("Accessible")
+                });
+                dojo.connect(dijit.byId("meterParking"), 'onClick', function(){
+                    showLotsByType("Meter")
+                });
+                dojo.connect(dijit.byId("motorcycleParking"), 'onClick', function(){
+                    showLotsByType("Motorcycle")
+                });
+                dojo.connect(dijit.byId("shortTermParking"), 'onClick', function(){
+                    showLotsByType("Short-term")
+                });
+				
+            }
+            
+            function showInfo(){
+                dijit.byId('mapView').performTransition('infoView', 1, 'slide', null, null);
+            }
+            
+			function disableInfo(){
+				dojo.byId("infoButton").src = "img/information_off.png";
+				
+			}
+			
+			function enableInfo(){
+				dojo.byId("infoButton").src = "img/information.png";
+				
+			}
+			
+            //Run the initialize function when the document loads
+            dojo.addOnLoad(init);
+        </script>
+    </head>
+    <body>
+        <!-- MAP VIEW -->
+        <div id="mapView" dojoType="dojox.mobile.View" style="width:100%;height:90%" selected="true">
+            <h1 dojoType="dojox.mobile.Heading">
+            	<input id="toggleLocator" type="image" src="img/loc_off.png" onclick="toggleLocator()"/>
+				<input id="searchButton" type="image" src="img/Search.png" onclick="dijit.byId('mapView').performTransition('searchView',1,'slide',null,null);"/>
+				<input id="routeButton" type="image" src="img/route_off.png" onclick="solveRoute(true)"/>
+				<input id="infoButton" type="image" src="img/information_off.png" onclick="showInfo()"/>
+			</h1>
+            <div style="width:100%;height:90%" id="map">
+            </div>
+        </div>
+        <!-- SEARCH VIEW -->
+        <div id="searchView" dojoType="dojox.mobile.View">
+            <h1 dojoType="dojox.mobile.Heading" back="Map" moveTo="mapView">Search</h1>
+            <ul id="searchTypes" dojoType="dojox.mobile.RoundRectList">
+                <li id="searchPeople" dojoType="dojox.mobile.ListItem" moveTo="peopleView" back="Back">
+					ENV People
+				</li>
+				<li id="searchBuildings" dojoType="dojox.mobile.ListItem" moveTo="buildingView" back="Back">
+                    Buildings
+                </li>
+				<li id="searchRooms" dojoType="dojox.mobile.ListItem" moveTo="roomView" back="Back">
+                    Rooms
+                </li>
+                <li id="searchFoodDrink" dojoType="dojox.mobile.ListItem" moveTo="foodView" back="Back">
+                    Food and Drink
+                </li>
+                <li id="searchParking" dojoType="dojox.mobile.ListItem" moveTo="parkingTypeView" back="Back">
+                    Parking
+                </li>
+				<li id="searchCourses" dojoType="dojox.mobile.ListItem" moveTo="facultyView" back="Back">
+                    Courses
+                </li>
+				<li id="findComputer" dojoType="dojox.mobile.ListItem" moveTo="labsView" back="Back">
+                    Find a Computer (currently unavailable)
+                </li>
+            </ul>
+        </div>
+		
+		<!-- PEOPLE VIEW -->
+        <div id="peopleView" dojoType="dojox.mobile.View">
+            <h1 dojoType="dojox.mobile.Heading" back="Search" moveTo="searchView">People</h1>
+            <ul id="peopleList" dojoType="dojox.mobile.RoundRectList">
+                <!--Search results go here-->
+            </ul>
+        </div>
+		
+        <!-- BUILDING VIEW -->
+        <div id="buildingView" dojoType="dojox.mobile.View">
+            <h1 dojoType="dojox.mobile.Heading" back="Search" moveTo="searchView">Buildings</h1>
+            <ul id="bldgList" dojoType="dojox.mobile.RoundRectList">
+                <!--Search results go here-->
+            </ul>
+        </div>
+		
+		<!-- ROOM VIEW -->
+        <div id="roomView" dojoType="dojox.mobile.View">
+            <h1 dojoType="dojox.mobile.Heading" back="Search" moveTo="searchView">Rooms</h1>
+			<div dojoType="dojox.mobile.RoundRect">
+				Building: <select id="bldgSelector" onchange="buildFloorList()"></select>
+				Floor: <select id="floorSelector" onchange="createRoomList()"></select>
+			</div>
+            <ul id="roomList" dojoType="dojox.mobile.EdgeToEdgeList">
+                <!--Search results go here-->
+				
+            </ul>
+        </div>
+		
+        <!-- FOOD VIEW -->
+        <div id="foodView" dojoType="dojox.mobile.View">
+            <h1 dojoType="dojox.mobile.Heading" back="Search" moveTo="searchView">Food and Drink</h1>
+            <ul id="foodList" dojoType="dojox.mobile.RoundRectList">
+                <!--Search results go here-->
+            </ul>
+        </div>
+		
+		 <!-- FACULTY VIEW -->
+        <div id="facultyView" dojoType="dojox.mobile.View">
+            <h1 dojoType="dojox.mobile.Heading" back="Search" moveTo="searchView">Faculties</h1>
+            <ul id="facultyList" dojoType="dojox.mobile.RoundRectList">
+                <!--Search results go here-->
+            </ul>
+        </div>
+		
+		 <!-- DEPARTMENT VIEW -->
+        <div id="departmentView" dojoType="dojox.mobile.View">
+            <h1 dojoType="dojox.mobile.Heading" back="Search" moveTo="facultyView">Departments</h1>
+            <ul id="departmentList" dojoType="dojox.mobile.RoundRectList">
+                <!--Search results go here-->
+            </ul>
+        </div>
+		
+		 <!-- COURSE VIEW -->
+        <div id="courseView" dojoType="dojox.mobile.View">
+            <h1 dojoType="dojox.mobile.Heading" back="Search" moveTo="departmentView">Courses</h1>
+            <ul id="courseList" dojoType="dojox.mobile.RoundRectList">
+                <!--Search results go here-->
+            </ul>
+        </div>
+		
+		<!-- LABS VIEW -->
+		<div id="labsView" dojoType="dojox.mobile.View">
+			<h1 dojoType="dojox.mobile.Heading" back="Search" moveTo="searchView">ENV Computer Labs</h1>
+			<ul id="labList" dojoType="dojox.mobile.RoundRectList">
+				<!--List of labs goes here-->
+			</ul>
+		</div>
+		
+        <!-- PARKING TYPE VIEW -->
+        <div id="parkingTypeView" dojoType="dojox.mobile.View">
+            <h1 dojoType="dojox.mobile.Heading" back="Search" moveTo="parkingView">Parking Type</h1>
+            <ul id="parkingTypeList" dojoType="dojox.mobile.RoundRectList">
+                <li id="visitorParking" dojoType="dojox.mobile.ListItem" moveTo="mapView" back="Back">
+                    Visitor
+                </li>
+                <li id="permitParking" dojoType="dojox.mobile.ListItem" moveTo="mapView" back="Back">
+                    Permit
+                </li>
+                <li id="accessibleParking" dojoType="dojox.mobile.ListItem" moveTo="mapView" back="Back">
+                    Accessible
+                </li>
+                <li id="meterParking" dojoType="dojox.mobile.ListItem" moveTo="mapView" back="Back">
+                    Meter
+                </li>
+                <li id="motorcycleParking" dojoType="dojox.mobile.ListItem" moveTo="mapView" back="Back">
+                    Motorcycle
+                </li>
+                <li id="shortTermParking" dojoType="dojox.mobile.ListItem" moveTo="mapView" back="Back">
+                    Short-term
+                </li>
+            </ul>
+        </div>
+        <!-- INFO VIEW -->
+        <div id="infoView" dojoType="dojox.mobile.View">
+            <h1 dojoType="dojox.mobile.Heading" back="Map" moveTo="mapView">Information</h1>
+            <ul id="infoList" dojoType="dojox.mobile.EdgeToEdgeList">
+                <li id="identInfo" class="mblVariableHeight" dojoType="dojox.mobile.ListItem">
+                </li>
+            </ul>
+        </div>
+    </body>
+</html>
