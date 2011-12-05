@@ -23,14 +23,14 @@ function buildFloorList(){
 	queryTask.execute(query,function(features){
 		floorQuery = new esri.tasks.RelationshipQuery();
 		floorQuery.outFields = ["*"];
-		floorQuery.relationshipId = 5;
+		floorQuery.relationshipId = 3;
 		floorQuery.objectIds = [features.features[0].attributes.OBJECTID];
 		
 		buildingLayer.queryRelatedFeatures(floorQuery,
 			function(relatedRecords){
 				//sort features alphabetically based on the building abbreviation
 				relatedRecords[features.features[0].attributes.OBJECTID].features.sort(function(a, b){
-					if (a.attributes.SHORTNAME < b.attributes.SHORTNAME) {
+					if (a.attributes.VERTORDER < b.attributes.VERTORDER) {
 						return -1;
 					}
 					else {
@@ -39,7 +39,7 @@ function buildFloorList(){
 				});
 				
 				dojo.forEach(relatedRecords[features.features[0].attributes.OBJECTID].features,function(feature){
-					floorNum = feature.attributes.SHORTNAME;
+					floorNum = feature.attributes.VERTORDER;
 					floorSelector.append("<option label='" + floorNum + "' value='" + feature.attributes.OBJECTID + "'></option>")
 				});
 					
@@ -62,7 +62,7 @@ function createRoomList(){
 	
 	var roomQuery = new esri.tasks.RelationshipQuery();
 	roomQuery.outFields = ["*"];
-	roomQuery.relationshipId = 4;
+	roomQuery.relationshipId = 2;
 	roomQuery.objectIds = [floorOID];
 	roomQuery.returnGeometry = true;
 	
