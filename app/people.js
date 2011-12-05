@@ -67,7 +67,7 @@ function showOffice(feature){
 	map.setExtent(feature.geometry.getExtent().expand(2.5));
 	destination = feature.geometry.getExtent().getCenter();
 	dijit.byId('identInfo').domNode.textContent = feature.attributes.LONGNAME;
-	floorNum = feature.attributes.FLOORID.charAt(feature.attributes.FLOORID.length - 1);
+	floorNum = feature.attributes.FLOORKEY.charAt(feature.attributes.FLOORKEY.length - 1);
 	changeFloors(floorNum);
 	enableInfo();
 	enableRouting();
