@@ -146,7 +146,7 @@
 				
 				
                 //Create routing task
-                routeTask = new esri.tasks.RouteTask("http://env-gisdev1.uwaterloo.ca/arcgis/rest/services/campus-map/uw_route/NAServer/Route");
+                routeTask = new esri.tasks.RouteTask("http://maps.uwaterloo.ca/arcgis/services/mobile/uw_network/MapServer/NAServer/Route");
                 routeParams = new esri.tasks.RouteParameters();
                 routeParams.stops = new esri.tasks.FeatureSet();
                 routeParams.outSpatialReference = new esri.SpatialReference({
